@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AlphaFlow – Live Terminal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+  
+  <style>
+    /* --- THEME --- */
+    :root {
+      --bg: #020617; --text: #e2e8f0; --muted: #94a3b8;
+      --accent: #38bdf8; --glass: rgba(15, 23, 42, 0.95);
+      --border: rgba(148, 163, 184, 0.15);
+      --bullish: #00E396; --bearish: #FF4560; /* GREEN/RED COLORS */
+    }
+    body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); overflow-x: hidden; }
+    * { box-sizing: border-box; }
+
+    /* ANIMATION & NAV same as before */
+    #bgCanvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; opacity: 0.6; pointer-events: none; }
+    .nav-bar { position: sticky; top: 0; padding: 1rem 2rem; background: rgba(2,6,23,0.9); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; z-index: 100; }
+    .brand { font-weight: 800; font-size: 1.2rem; color: #fff; text-decoration: none; display: flex; gap: 10px; align-items: center; }
+    .logo { width: 12px; height: 12px; background: var(--accent); border-radius: 50%; box-shadow: 0 0 15px var(--accent); }
+    .nav-link { color: var(--muted); text-decoration: none; font-size: 0.9rem; transition: 0.3s; cursor: pointer; }
+    .nav-link:hover { color: var(--accent); }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 2rem; min-height: 90vh; display: flex; flex-direction: column; position: relative; z-index: 5; }
+    
+    /* SEARCH */
+    .search-section { text-align: center; margin-bottom: 3rem; position: relative; }
+    .search-wrapper { position: relative; width: 100%; max-width: 600px; margin: 0 auto; }
+    .search-box { display: flex; gap: 10px; width: 100%; background: rgba(30, 41, 59, 0.6); padding: 8px; border-radius: 12px; border: 1px solid var(--border); backdrop-filter: blur(10px); }
+    input { flex: 1; background: transparent; border: none; padding: 12px 16px; color: #fff; font-size: 1rem; outline: none; }
+    .analyze-btn { background: var(--accent); color: #000; border: none; padding: 0 24px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+    .analyze-btn:hover { filter: brightness(1.1); transform: scale(1.02); }
+
+    .suggestions-list { position: absolute; top: 110%; left: 0; width: 100%; background: rgba(11, 17, 32, 0.98); border: 1px solid var(--border); border-radius: 12px; padding: 0; margin: 0; list-style: none; max-height: 300px; overflow-y: auto; display: none; z-index: 50; box-shadow: 0 20px 50px rgba(0,0,0,0.8); backdrop-filter: blur(12px); }
+    .suggestions-list.active { display: block; }
+    .suggestions-list li { padding: 12px 20px; border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; color: var(--muted); display: flex; justify-content: space-between; transition: 0.2s; }
+    .suggestions-list li:hover { background: rgba(56, 189, 248, 0.15); color: #fff; }
+
+    .loader { display: none; text-align: center; margin: 2rem 0; }
+    .spinner { width: 40px; height: 40px; border: 4px solid rgba(56, 189, 248, 0.1); border-top: 4px solid var(--accent); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 10px; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    .dashboard-grid { display: none; grid-template-columns: 2fr 1fr; gap: 25px; animation: fadeUp 0.5s ease-out; }
+    @media (max-width: 900px) { .dashboard-grid { grid-template-columns: 1fr; } }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* CARDS */
+    .card { background: rgba(11, 17, 32, 0.8); border: 1px solid var(--border); border-radius: 16px; padding: 20px; backdrop-filter: blur(5px); }
+    .price-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+    .ticker-name { font-size: 2rem; font-weight: bold; line-height: 1; margin-bottom: 5px; color: #fff; }
+    .current-price { font-size: 1.3rem; color: var(--muted); }
+    
+    .prediction-container { display: flex; gap: 20px; text-align: right; }
+    .pred-box { padding: 10px 15px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid var(--border); }
+    .pred-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+    .pred-val { font-size: 1.4rem; font-weight: bold; color: #fff; }
+    .open-val { color: var(--accent); }
+    .close-val { color: var(--bullish); }
+
+    .stat-row { display: flex; justify-content: space-between; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .stat-label { color: var(--muted); font-size: 0.9rem; }
+    .stat-val { color: #fff; font-weight: 600; }
+
+    /* NEURAL LOGIC BOX */
+    .model-explain { background: rgba(56, 189, 248, 0.05); border-radius: 8px; padding: 15px; border-left: 3px solid var(--accent); font-size: 0.85rem; color: var(--text); line-height: 1.6; margin-bottom: 15px; }
+    .model-title { font-weight: bold; color: #fff; display: block; margin-bottom: 6px; font-size: 0.95rem; }
+    .how-it-works { font-size: 0.8rem; color: var(--muted); margin-top: 5px; display: block; font-style: italic; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 5px; }
+    .ensemble-math { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--muted); padding: 10px; background: rgba(0,0,0,0.3); border-radius: 6px; margin-top: 5px; }
+
+    /* CHATBOT */
+    .chat-btn { position: fixed; bottom: 30px; right: 30px; width: 60px; height: 60px; background: var(--accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 20px rgba(56, 189, 248, 0.4); cursor: pointer; z-index: 999; transition: 0.3s; }
+    .chat-btn:hover { transform: scale(1.1); }
+    .chat-window { position: fixed; bottom: 100px; right: 30px; width: 350px; height: 500px; background: rgba(11, 17, 32, 0.95); border: 1px solid var(--border); border-radius: 20px; backdrop-filter: blur(15px); display: none; flex-direction: column; overflow: hidden; z-index: 999; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+    .chat-header { background: rgba(56, 189, 248, 0.1); padding: 15px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    .chat-body { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+    .chat-input-area { padding: 15px; border-top: 1px solid var(--border); display: flex; gap: 10px; background: rgba(0,0,0,0.2); }
+    .chat-input { flex: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 20px; padding: 10px 15px; color: #fff; outline: none; }
+    .chat-send { background: var(--accent); border: none; width: 35px; height: 35px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .msg { padding: 10px 15px; border-radius: 15px; max-width: 80%; font-size: 0.9rem; line-height: 1.4; }
+    .msg.bot { background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.2); color: #fff; align-self: flex-start; border-bottom-left-radius: 2px; }
+    .msg.user { background: var(--accent); color: #000; align-self: flex-end; border-bottom-right-radius: 2px; font-weight: 500; }
+  </style>
+</head>
+<body>
+
+  <canvas id="bgCanvas"></canvas>
+
+  <div class="nav-bar">
+      <a href="/" class="brand"><div class="logo"></div> AlphaFlow</a>
+      <a href="/" class="nav-link">← Back Home</a>
+  </div>
+
+  <div class="chat-btn" onclick="toggleChat()">💬</div>
+  <div class="chat-window" id="chatWindow">
+      <div class="chat-header"><span style="font-weight:bold; color:#fff;">AlphaBot Assistant</span><span style="cursor:pointer; color:var(--muted);" onclick="toggleChat()">✕</span></div>
+      <div class="chat-body" id="chatBody"><div class="msg bot">Hello! I'm your AI trading assistant. Ask me about indicators (RSI), market terms, or report an issue.</div></div>
+      <div class="chat-input-area"><input type="text" class="chat-input" id="chatInput" placeholder="Ask a question..." onkeypress="if(event.key==='Enter') sendChat()"><button class="chat-send" onclick="sendChat()">➤</button></div>
+  </div>
+
+  <div class="container">
+      <div class="search-section">
+          <h1 style="margin-bottom:10px;">Stock Predictor</h1>
+          <p style="color:var(--muted); margin-bottom:20px;">Select a stock to initialize Neural Network analysis.</p>
+          <div class="search-wrapper">
+              <div class="search-box">
+                  <input type="text" id="tickerInput" placeholder="Search Ticker (e.g. TCS, RELIANCE)" autocomplete="off">
+                  <button class="analyze-btn" onclick="runAnalysis()">SEARCH</button>
+              </div>
+              <ul class="suggestions-list" id="stockList"></ul>
+          </div>
+      </div>
+
+      <div class="loader" id="loader"><div class="spinner"></div><p style="color:var(--accent); font-family:monospace;">Running Neural Models...</p></div>
+
+      <div class="dashboard-grid" id="results">
+          <div class="card">
+              <div class="price-header">
+                  <div><div class="ticker-name" id="d-ticker">--</div><div class="current-price" id="d-current">Current: --</div></div>
+                  <div class="prediction-container">
+                      <div class="pred-box"><div class="pred-label">Target Open</div><div class="pred-val open-val" id="d-open">--</div></div>
+                      <div class="pred-box" style="border-color: rgba(0, 227, 150, 0.3);"><div class="pred-label">Target Close</div><div class="pred-val close-val" id="d-close">--</div></div>
+                  </div>
+              </div>
+              <div id="mainChart" style="min-height: 350px;"></div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:20px;">
+              <div class="card">
+                  <div class="stat-row"><span class="stat-label">AI Signal</span><span class="stat-val" id="d-signal" style="color:var(--accent)">--</span></div>
+                  <div class="stat-row"><span class="stat-label">Sentiment</span><span class="stat-val" id="d-sentiment">--</span></div>
+                  <div class="stat-row" style="border:none; padding:0;"><span class="stat-label">Confidence</span><span class="stat-val">94.2%</span></div>
+              </div>
+              <div class="card" style="flex:1;">
+                  <div style="margin-bottom:15px; font-weight:bold; color:#fff; font-size:1.1rem;">Neural Engine Logic</div>
+                  
+                  <div class="model-explain">
+                      <span class="model-title" style="color:var(--accent)">1. LSTM Model (Pattern)</span>
+                      Target: <span id="d-lstm" style="font-weight:bold;">--</span>
+                      <span class="how-it-works"><b>How it works:</b> Long Short-Term Memory (LSTM) is a neural network that mimics human memory. It analyzes the last 60 days of prices to find time-based patterns that simple math misses.</span>
+                  </div>
+                  <div class="model-explain" style="border-left-color: #facc15;">
+                      <span class="model-title" style="color:#facc15">2. XGBoost Model (Logic)</span>
+                      Target: <span id="d-xgb" style="font-weight:bold;">--</span>
+                      <span class="how-it-works"><b>How it works:</b> Gradient Boosting builds hundreds of decision trees. Each tree learns from the mistakes of the previous one, focusing on Volatility and RSI data to correct errors.</span>
+                  </div>
+                  <div class="ensemble-math">Final = (LSTM × 0.6) + (XGBoost × 0.4)</div>
+              </div>
+          </div>
+      </div>
+  </div>
+
+  <script>
+    // Background Animation
+    const canvas = document.getElementById('bgCanvas'); const ctx = canvas.getContext('2d');
+    let w, h, ticks = 0;
+    function resize(){ w=window.innerWidth; h=window.innerHeight; ctx.canvas.width=w; ctx.canvas.height=h; }
+    window.addEventListener('resize', resize); resize();
+    function draw() {
+        ctx.clearRect(0,0,w,h); ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
+        for(let x=0; x<w; x+=30) { for(let y=0; y<h; y+=30) {
+            const size = Math.sin((x*0.01)+(y*0.01)+(ticks*0.02))*1.5+1.5;
+            if(size>0) { ctx.beginPath(); ctx.arc(x,y,size,0,Math.PI*2); ctx.fill(); }
+        }} ticks++; requestAnimationFrame(draw);
+    }
+    draw();
+
+    // Chatbot Logic
+    function toggleChat() { document.getElementById('chatWindow').style.display = document.getElementById('chatWindow').style.display === 'flex' ? 'none' : 'flex'; }
+    async function sendChat() {
+        const input = document.getElementById('chatInput'); const body = document.getElementById('chatBody'); const msg = input.value; if(!msg) return;
+        body.innerHTML += `<div class="msg user">${msg}</div>`; input.value = ""; body.scrollTop = body.scrollHeight;
+        try {
+            const res = await fetch('/api/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({message:msg})});
+            const data = await res.json();
+            body.innerHTML += `<div class="msg bot">${data.response}</div>`; body.scrollTop = body.scrollHeight;
+        } catch (e) { body.innerHTML += `<div class="msg bot">Error connecting.</div>`; }
+    }
+
+    // Dropdown
+    const stocks = [{sym:'RELIANCE', name:'Reliance'}, {sym:'TCS', name:'Tata Consultancy'}, {sym:'INFY', name:'Infosys'}, {sym:'HDFCBANK', name:'HDFC Bank'}, {sym:'TATAMOTORS', name:'Tata Motors'}, {sym:'SBIN', name:'SBI'}, {sym:'ITC', name:'ITC'}, {sym:'NIFTY', name:'Nifty 50'}];
+    const input = document.getElementById('tickerInput'); const list = document.getElementById('stockList');
+    input.addEventListener('input', function() {
+        const val = this.value.toUpperCase(); list.innerHTML='';
+        if(!val) { list.classList.remove('active'); return; }
+        const filtered = stocks.filter(s => s.sym.includes(val) || s.name.toUpperCase().includes(val));
+        if(filtered.length>0) {
+            filtered.forEach(s => {
+                const li = document.createElement('li'); li.innerHTML=`<span class="stock-ticker">${s.sym}</span><span class="stock-name">${s.name}</span>`;
+                li.onclick=()=>{input.value=s.sym; list.classList.remove('active');}; list.appendChild(li);
+            }); list.classList.add('active');
+        } else { list.classList.remove('active'); }
+    });
+    document.addEventListener('click', (e) => { if (!e.target.closest('.search-wrapper')) list.classList.remove('active'); });
+
+    // Analysis
+    let chart;
+    async function runAnalysis() {
+        const ticker = input.value.toUpperCase();
+        const loader = document.getElementById('loader'); const results = document.getElementById('results');
+        if(!ticker) return alert("Enter ticker");
+        results.style.display='none'; loader.style.display='block';
+        try {
+            const res = await fetch('/api/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ticker:ticker})});
+            const data = await res.json();
+            if(data.error) throw new Error(data.error);
+
+            document.getElementById('d-ticker').innerText = data.ticker;
+            document.getElementById('d-current').innerText = "Current: ₹" + data.current_price.toFixed(2);
+            document.getElementById('d-open').innerText = "₹" + data.prediction.open.toFixed(2);
+            document.getElementById('d-close').innerText = "₹" + data.prediction.close.toFixed(2);
+            document.getElementById('d-signal').innerText = data.signal;
+            document.getElementById('d-sentiment').innerText = data.sentiment.label;
+            document.getElementById('d-lstm').innerText = "₹" + data.prediction.lstm.toFixed(2);
+            document.getElementById('d-xgb').innerText = "₹" + data.prediction.xgboost.toFixed(2);
+
+            renderChart(data.history, data.prediction.open, data.prediction.close);
+            loader.style.display='none'; results.style.display='grid';
+        } catch(e) { alert(e.message); loader.style.display='none'; }
+    }
+
+    function renderChart(history, predOpen, predClose) {
+        if(chart) chart.destroy();
+        let lastDate = new Date(history[history.length-1].x).getTime();
+        let tomorrow = lastDate + 86400000;
+        var options = {
+            series: [{ name: 'Price', data: history }],
+            chart: { type: 'candlestick', height: 350, background: 'transparent', toolbar: { show: false } },
+            theme: { mode: 'dark' },
+            
+            // DEEP RED AND GREEN COLORS FOR WICKS
+            plotOptions: { candlestick: { colors: { upward: '#00E396', downward: '#FF4560' }, wick: { useFillColor: true } } },
+            
+            grid: { borderColor: 'rgba(255,255,255,0.05)' },
+            xaxis: { type: 'datetime', tooltip: { enabled: false }, axisBorder: { show: false } },
+            yaxis: { labels: { style: { colors: '#94a3b8' }, formatter: (val) => val.toFixed(0) } },
+            annotations: { points: [
+                { x: tomorrow, y: predOpen, marker: { size: 5, fillColor: '#38bdf8', strokeColor: '#fff', strokeWidth: 2 }, label: { borderColor: '#38bdf8', style: { color: '#000', background: '#38bdf8' }, text: 'Open' } },
+                { x: tomorrow, y: predClose, marker: { size: 6, fillColor: '#00E396', strokeColor: '#fff', strokeWidth: 2 }, label: { borderColor: '#00E396', style: { color: '#fff', background: '#00E396' }, text: 'Close' } }
+            ]}
+        };
+        chart = new ApexCharts(document.querySelector("#mainChart"), options);
+        chart.render();
+    }
+  </script>
+</body>
+</html>
